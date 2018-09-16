@@ -767,7 +767,7 @@ static void AddLZ77BlockAutoType(const ZopfliOptions* options, int final,
     AddBits(0, 7, bp, out, outsize);  /* end symbol has code 0000000 */
     return;
   }
-  ZopfliInitLZ77Store(lz77->data, &fixedstore);
+  ZopfliInitLZ77Store(lz77->data, lz77->mask, &fixedstore);
   if (expensivefixed) {
     /* Recalculate the LZ77 with ZopfliLZ77OptimalFixed */
     size_t instart = lz77->pos[lstart];
@@ -775,7 +775,7 @@ static void AddLZ77BlockAutoType(const ZopfliOptions* options, int final,
 
     ZopfliBlockState s;
     ZopfliInitBlockState(options, instart, inend, 1, &s);
-    ZopfliLZ77OptimalFixed(&s, lz77->data, instart, inend, &fixedstore);
+    ZopfliLZ77OptimalFixed(&s, lz77->data, lz77->mask, instart, inend, &fixedstore);
     fixedcost = ZopfliCalculateBlockSize(&fixedstore, 0, fixedstore.size, 1);
     ZopfliCleanBlockState(&s);
   }
@@ -809,7 +809,7 @@ This function will usually output multiple deflate blocks. If final is 1, then
 the final bit will be set on the last block.
 */
 void ZopfliDeflatePart(const ZopfliOptions* options, int btype, int final,
-                       const unsigned char* in, size_t instart, size_t inend,
+                       const unsigned char* in, const unsigned char* mask, size_t instart, size_t inend,
                        unsigned char* bp, unsigned char** out,
                        size_t* outsize) {
   size_t i;
@@ -829,10 +829,10 @@ void ZopfliDeflatePart(const ZopfliOptions* options, int btype, int final,
   } else if (btype == 1) {
     ZopfliLZ77Store store;
     ZopfliBlockState s;
-    ZopfliInitLZ77Store(in, &store);
+    ZopfliInitLZ77Store(in, mask, &store);
     ZopfliInitBlockState(options, instart, inend, 1, &s);
 
-    ZopfliLZ77OptimalFixed(&s, in, instart, inend, &store);
+    ZopfliLZ77OptimalFixed(&s, in, mask, instart, inend, &store);
     AddLZ77Block(options, btype, final, &store, 0, store.size, 0,
                  bp, out, outsize);
 
@@ -843,22 +843,22 @@ void ZopfliDeflatePart(const ZopfliOptions* options, int btype, int final,
 
 
   if (options->blocksplitting) {
-    ZopfliBlockSplit(options, in, instart, inend,
+    ZopfliBlockSplit(options, in, mask, instart, inend,
                      options->blocksplittingmax,
                      &splitpoints_uncompressed, &npoints);
     splitpoints = (size_t*)malloc(sizeof(*splitpoints) * npoints);
   }
 
-  ZopfliInitLZ77Store(in, &lz77);
+  ZopfliInitLZ77Store(in, mask, &lz77);
 
   for (i = 0; i <= npoints; i++) {
     size_t start = i == 0 ? instart : splitpoints_uncompressed[i - 1];
     size_t end = i == npoints ? inend : splitpoints_uncompressed[i];
     ZopfliBlockState s;
     ZopfliLZ77Store store;
-    ZopfliInitLZ77Store(in, &store);
+    ZopfliInitLZ77Store(in, mask, &store);
     ZopfliInitBlockState(options, start, end, 1, &s);
-    ZopfliLZ77Optimal(&s, in, start, end, options->numiterations, &store);
+    ZopfliLZ77Optimal(&s, in, mask, start, end, options->numiterations, &store);
     totalcost += ZopfliCalculateBlockSizeAutoType(&store, 0, store.size);
 
     ZopfliAppendLZ77Store(&store, &lz77);
@@ -906,11 +906,11 @@ void ZopfliDeflatePart(const ZopfliOptions* options, int btype, int final,
 }
 
 void ZopfliDeflate(const ZopfliOptions* options, int btype, int final,
-                   const unsigned char* in, size_t insize,
+                   const unsigned char* in, const unsigned char* mask, size_t insize,
                    unsigned char* bp, unsigned char** out, size_t* outsize) {
  size_t offset = *outsize;
 #if ZOPFLI_MASTER_BLOCK_SIZE == 0
-  ZopfliDeflatePart(options, btype, final, in, 0, insize, bp, out, outsize);
+  ZopfliDeflatePart(options, btype, final, in, mask, 0, insize, bp, out, outsize);
 #else
   size_t i = 0;
   do {
@@ -918,7 +918,7 @@ void ZopfliDeflate(const ZopfliOptions* options, int btype, int final,
     int final2 = final && masterfinal;
     size_t size = masterfinal ? insize - i : ZOPFLI_MASTER_BLOCK_SIZE;
     ZopfliDeflatePart(options, btype, final2,
-                      in, i, i + size, bp, out, outsize);
+                      in, mask, i, i + size, bp, out, outsize);
     i += size;
   } while (i < insize);
 #endif

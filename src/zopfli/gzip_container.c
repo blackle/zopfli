@@ -82,7 +82,7 @@ static unsigned long CRC(const unsigned char* data, size_t size) {
 
 /* Compresses the data according to the gzip specification, RFC 1952. */
 void ZopfliGzipCompress(const ZopfliOptions* options,
-                        const unsigned char* in, size_t insize,
+                        const unsigned char* in, const unsigned char* mask, size_t insize,
                         unsigned char** out, size_t* outsize) {
   unsigned long crcvalue = CRC(in, insize);
   unsigned char bp = 0;
@@ -101,7 +101,7 @@ void ZopfliGzipCompress(const ZopfliOptions* options,
   ZOPFLI_APPEND_DATA(3, out, outsize);  /* OS follows Unix conventions. */
 
   ZopfliDeflate(options, 2 /* Dynamic block */, 1,
-                in, insize, &bp, out, outsize);
+                in, mask, insize, &bp, out, outsize);
 
   /* CRC */
   ZOPFLI_APPEND_DATA(crcvalue % 256, out, outsize);

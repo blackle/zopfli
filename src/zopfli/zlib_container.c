@@ -48,7 +48,7 @@ static unsigned adler32(const unsigned char* data, size_t size)
 }
 
 void ZopfliZlibCompress(const ZopfliOptions* options,
-                        const unsigned char* in, size_t insize,
+                        const unsigned char* in, const unsigned char* mask, size_t insize,
                         unsigned char** out, size_t* outsize) {
   unsigned char bitpointer = 0;
   unsigned checksum = adler32(in, (unsigned)insize);
@@ -63,7 +63,7 @@ void ZopfliZlibCompress(const ZopfliOptions* options,
   ZOPFLI_APPEND_DATA(cmfflg % 256, out, outsize);
 
   ZopfliDeflate(options, 2 /* dynamic block */, 1 /* final */,
-                in, insize, &bitpointer, out, outsize);
+                in, mask, insize, &bitpointer, out, outsize);
 
   ZOPFLI_APPEND_DATA((checksum >> 24) % 256, out, outsize);
   ZOPFLI_APPEND_DATA((checksum >> 16) % 256, out, outsize);

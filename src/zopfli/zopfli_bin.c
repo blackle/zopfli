@@ -99,17 +99,35 @@ outfilename: filename to write output to, or 0 to write to stdout instead
 static void CompressFile(const ZopfliOptions* options,
                          ZopfliFormat output_type,
                          const char* infilename,
+                         const char* maskfilename,
                          const char* outfilename) {
   unsigned char* in;
   size_t insize;
+  unsigned char* mask;
+  size_t masksize;
   unsigned char* out = 0;
   size_t outsize = 0;
+
   if (!LoadFile(infilename, &in, &insize)) {
     fprintf(stderr, "Invalid filename: %s\n", infilename);
     return;
   }
+  if (maskfilename) {
+    if (!LoadFile(maskfilename, &mask, &masksize)) {
+      fprintf(stderr, "Invalid filename: %s\n", maskfilename);
+      return;
+    }
+    if (masksize != insize) {
+      fprintf(stderr, "Mask and file must be the same size.\n");
+      return;
+    }
+  } else {
+    mask = malloc(insize);
+    masksize = insize;
+    memset(mask, 0, masksize);
+  }
 
-  ZopfliCompress(options, output_type, in, insize, &out, &outsize);
+  ZopfliCompress(options, output_type, in, mask, insize, &out, &outsize);
 
   if (outfilename) {
     SaveFile(outfilename, out, outsize);
@@ -145,6 +163,7 @@ int main(int argc, char* argv[]) {
   ZopfliOptions options;
   ZopfliFormat output_type = ZOPFLI_FORMAT_GZIP;
   const char* filename = 0;
+  const char* maskfile = 0;
   int output_to_stdout = 0;
   int i;
 
@@ -164,6 +183,9 @@ int main(int argc, char* argv[]) {
         && arg[3] >= '0' && arg[3] <= '9') {
       options.numiterations = atoi(arg + 3);
     }
+    else if (arg[0] == '-' && arg[1] == '-' && arg[2] == 'm' && arg[3] == 'a' && arg[4] == 's' && arg[5] == 'k' && arg[6] == '=') {
+      maskfile = arg + 7;
+    }
     else if (StringsEqual(arg, "-h")) {
       fprintf(stderr,
           "Usage: zopfli [OPTION]... FILE...\n"
@@ -175,6 +197,7 @@ int main(int argc, char* argv[]) {
           " more compression but is slower."
           " Examples: --i10, --i50, --i1000\n");
       fprintf(stderr,
+          "  --mask=file   mask file for lossy compression\n"
           "  --gzip        output to gzip format (default)\n"
           "  --zlib        output to zlib format instead of gzip\n"
           "  --deflate     output to deflate format instead of gzip\n"
@@ -205,7 +228,7 @@ int main(int argc, char* argv[]) {
       if (options.verbose && outfilename) {
         fprintf(stderr, "Saving to: %s\n", outfilename);
       }
-      CompressFile(&options, output_type, filename, outfilename);
+      CompressFile(&options, output_type, filename, maskfile, outfilename);
       free(outfilename);
     }
   }

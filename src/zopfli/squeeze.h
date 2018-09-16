@@ -39,7 +39,8 @@ If instart is larger than 0, it uses values before instart as starting
 dictionary.
 */
 void ZopfliLZ77Optimal(ZopfliBlockState *s,
-                       const unsigned char* in, size_t instart, size_t inend,
+                       const unsigned char* in, const unsigned char* mask,
+                       size_t instart, size_t inend,
                        int numiterations,
                        ZopfliLZ77Store* store);
 
@@ -54,7 +55,7 @@ If instart is larger than 0, it uses values before instart as starting
 dictionary.
 */
 void ZopfliLZ77OptimalFixed(ZopfliBlockState *s,
-                            const unsigned char* in,
+                            const unsigned char* in, const unsigned char* mask,
                             size_t instart, size_t inend,
                             ZopfliLZ77Store* store);
 

@@ -56,7 +56,7 @@ out: pointer to the dynamic output array to which the result is appended. Must
 outsize: pointer to the dynamic output array size.
 */
 void ZopfliDeflate(const ZopfliOptions* options, int btype, int final,
-                   const unsigned char* in, size_t insize,
+                   const unsigned char* in, const unsigned char* mask, size_t insize,
                    unsigned char* bp, unsigned char** out, size_t* outsize);
 
 /*
@@ -65,7 +65,7 @@ inend. Only that part is compressed, but earlier bytes are still used for the
 back window.
 */
 void ZopfliDeflatePart(const ZopfliOptions* options, int btype, int final,
-                       const unsigned char* in, size_t instart, size_t inend,
+                       const unsigned char* in, const unsigned char* mask, size_t instart, size_t inend,
                        unsigned char* bp, unsigned char** out,
                        size_t* outsize);
 

@@ -48,6 +48,7 @@ typedef struct ZopfliLZ77Store {
   size_t size;
 
   const unsigned char* data;  /* original data */
+  const unsigned char* mask;  /* data mask */
   size_t* pos;  /* position in data where this LZ77 command begins */
 
   unsigned short* ll_symbol;
@@ -61,7 +62,7 @@ typedef struct ZopfliLZ77Store {
   size_t* d_counts;
 } ZopfliLZ77Store;
 
-void ZopfliInitLZ77Store(const unsigned char* data, ZopfliLZ77Store* store);
+void ZopfliInitLZ77Store(const unsigned char* data, const unsigned char* mask, ZopfliLZ77Store* store);
 void ZopfliCleanLZ77Store(ZopfliLZ77Store* store);
 void ZopfliCopyLZ77Store(const ZopfliLZ77Store* source, ZopfliLZ77Store* dest);
 void ZopfliStoreLitLenDist(unsigned short length, unsigned short dist,
@@ -119,13 +120,13 @@ sublen: output array of 259 elements, or null. Has, for each length, the
 */
 void ZopfliFindLongestMatch(
     ZopfliBlockState *s, const ZopfliHash* h, const unsigned char* array,
-    size_t pos, size_t size, size_t limit,
+    const unsigned char* mask, size_t pos, size_t size, size_t limit,
     unsigned short* sublen, unsigned short* distance, unsigned short* length);
 
 /*
 Verifies if length and dist are indeed valid, only used for assertion.
 */
-void ZopfliVerifyLenDist(const unsigned char* data, size_t datasize, size_t pos,
+void ZopfliVerifyLenDist(const unsigned char* data, const unsigned char* mask, size_t datasize, size_t pos,
                          unsigned short dist, unsigned short length);
 
 /*
@@ -136,7 +137,7 @@ If instart is larger than 0, it uses values before instart as starting
 dictionary.
 */
 void ZopfliLZ77Greedy(ZopfliBlockState* s, const unsigned char* in,
-                      size_t instart, size_t inend,
+                      const unsigned char* mask, size_t instart, size_t inend,
                       ZopfliLZ77Store* store, ZopfliHash* h);
 
 #endif  /* ZOPFLI_LZ77_H_ */

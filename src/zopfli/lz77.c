@@ -24,13 +24,15 @@ Author: jyrki.alakuijala@gmail.com (Jyrki Alakuijala)
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
-void ZopfliInitLZ77Store(const unsigned char* data, ZopfliLZ77Store* store) {
+void ZopfliInitLZ77Store(const unsigned char* data, const unsigned char* mask, ZopfliLZ77Store* store) {
   store->size = 0;
   store->litlens = 0;
   store->dists = 0;
   store->pos = 0;
   store->data = data;
+  store->mask = mask;
   store->ll_symbol = 0;
   store->d_symbol = 0;
   store->ll_counts = 0;
@@ -57,7 +59,7 @@ void ZopfliCopyLZ77Store(
   size_t llsize = ZOPFLI_NUM_LL * CeilDiv(source->size, ZOPFLI_NUM_LL);
   size_t dsize = ZOPFLI_NUM_D * CeilDiv(source->size, ZOPFLI_NUM_D);
   ZopfliCleanLZ77Store(dest);
-  ZopfliInitLZ77Store(source->data, dest);
+  ZopfliInitLZ77Store(source->data, source->mask, dest);
   dest->litlens =
       (unsigned short*)malloc(sizeof(*dest->litlens) * source->size);
   dest->dists = (unsigned short*)malloc(sizeof(*dest->dists) * source->size);
@@ -270,7 +272,14 @@ static int GetLengthScore(int length, int distance) {
   return distance > 1024 ? length - 1 : length;
 }
 
-void ZopfliVerifyLenDist(const unsigned char* data, size_t datasize, size_t pos,
+static bool CompareWithMask(const unsigned char scan,
+                            const unsigned char scan_mask,
+                            const unsigned char match,
+                            const unsigned char match_mask) {
+  return (((scan ^ match) & ~scan_mask) | (~scan_mask & match_mask)) == 0;
+}
+
+void ZopfliVerifyLenDist(const unsigned char* data, const unsigned char* mask, size_t datasize, size_t pos,
                          unsigned short dist, unsigned short length) {
 
   /* TODO(lode): make this only run in a debug compile, it's for assert only. */
@@ -278,8 +287,10 @@ void ZopfliVerifyLenDist(const unsigned char* data, size_t datasize, size_t pos,
 
   assert(pos + length <= datasize);
   for (i = 0; i < length; i++) {
-    if (data[pos - dist + i] != data[pos + i]) {
-      assert(data[pos - dist + i] == data[pos + i]);
+    size_t scan_offset = pos + i;
+    size_t match_offset = pos - dist + i;
+    if (!CompareWithMask(data[scan_offset], mask[scan_offset], data[match_offset], mask[match_offset])) {
+      assert(0);
       break;
     }
   }
@@ -295,36 +306,14 @@ end is the last possible byte, beyond which to stop looking.
 safe_end is a few (8) bytes before end, for comparing multiple bytes at once.
 */
 static const unsigned char* GetMatch(const unsigned char* scan,
+                                     const unsigned char* scan_mask,
                                      const unsigned char* match,
+                                     const unsigned char* match_mask,
                                      const unsigned char* end,
                                      const unsigned char* safe_end) {
-
-  if (sizeof(size_t) == 8) {
-    /* 8 checks at once per array bounds check (size_t is 64-bit). */
-    while (scan < safe_end && *((size_t*)scan) == *((size_t*)match)) {
-      scan += 8;
-      match += 8;
-    }
-  } else if (sizeof(unsigned int) == 4) {
-    /* 4 checks at once per array bounds check (unsigned int is 32-bit). */
-    while (scan < safe_end
-        && *((unsigned int*)scan) == *((unsigned int*)match)) {
-      scan += 4;
-      match += 4;
-    }
-  } else {
-    /* do 8 checks at once per array bounds check. */
-    while (scan < safe_end && *scan == *match && *++scan == *++match
-          && *++scan == *++match && *++scan == *++match
-          && *++scan == *++match && *++scan == *++match
-          && *++scan == *++match && *++scan == *++match) {
-      scan++; match++;
-    }
-  }
-
   /* The remaining few bytes. */
-  while (scan != end && *scan == *match) {
-    scan++; match++;
+  while (scan != end && CompareWithMask(*scan, *scan_mask, *match, *match_mask)) {
+    scan++; match++; scan_mask++; match_mask++;
   }
 
   return scan;
@@ -405,14 +394,16 @@ static void StoreInLongestMatchCache(ZopfliBlockState* s,
 #endif
 
 void ZopfliFindLongestMatch(ZopfliBlockState* s, const ZopfliHash* h,
-    const unsigned char* array,
+    const unsigned char* array, const unsigned char* mask,
     size_t pos, size_t size, size_t limit,
     unsigned short* sublen, unsigned short* distance, unsigned short* length) {
   unsigned short hpos = pos & ZOPFLI_WINDOW_MASK, p, pp;
   unsigned short bestdist = 0;
   unsigned short bestlength = 1;
   const unsigned char* scan;
+  const unsigned char* scan_mask;
   const unsigned char* match;
+  const unsigned char* match_mask;
   const unsigned char* arrayend;
   const unsigned char* arrayend_safe;
 #if ZOPFLI_MAX_CHAIN_HITS < ZOPFLI_WINDOW_SIZE
@@ -472,15 +463,17 @@ void ZopfliFindLongestMatch(ZopfliBlockState* s, const ZopfliHash* h,
       assert(pos < size);
       assert(dist <= pos);
       scan = &array[pos];
+      scan_mask = &mask[pos];
       match = &array[pos - dist];
+      match_mask = &mask[pos - dist];
 
       /* Testing the byte at position bestlength first, goes slightly faster. */
       if (pos + bestlength >= size
-          || *(scan + bestlength) == *(match + bestlength)) {
+          || CompareWithMask(*(scan + bestlength), *(scan_mask + bestlength), *(match + bestlength), *(match_mask + bestlength))) {
 
 #ifdef ZOPFLI_HASH_SAME
         unsigned short same0 = h->same[pos & ZOPFLI_WINDOW_MASK];
-        if (same0 > 2 && *scan == *match) {
+        if (same0 > 2 && CompareWithMask(*scan, *scan_mask, *match, *match_mask)) {
           unsigned short same1 = h->same[(pos - dist) & ZOPFLI_WINDOW_MASK];
           unsigned short same = same0 < same1 ? same0 : same1;
           if (same > limit) same = limit;
@@ -488,7 +481,7 @@ void ZopfliFindLongestMatch(ZopfliBlockState* s, const ZopfliHash* h,
           match += same;
         }
 #endif
-        scan = GetMatch(scan, match, arrayend, arrayend_safe);
+        scan = GetMatch(scan, scan_mask, match, match_mask, arrayend, arrayend_safe);
         currentlength = scan - &array[pos];  /* The found length. */
       }
 
@@ -542,7 +535,7 @@ void ZopfliFindLongestMatch(ZopfliBlockState* s, const ZopfliHash* h,
 }
 
 void ZopfliLZ77Greedy(ZopfliBlockState* s, const unsigned char* in,
-                      size_t instart, size_t inend,
+                      const unsigned char* mask, size_t instart, size_t inend,
                       ZopfliLZ77Store* store, ZopfliHash* h) {
   size_t i = 0, j;
   unsigned short leng;
@@ -571,7 +564,7 @@ void ZopfliLZ77Greedy(ZopfliBlockState* s, const unsigned char* in,
   for (i = instart; i < inend; i++) {
     ZopfliUpdateHash(in, i, inend, h);
 
-    ZopfliFindLongestMatch(s, h, in, i, inend, ZOPFLI_MAX_MATCH, dummysublen,
+    ZopfliFindLongestMatch(s, h, in, mask, i, inend, ZOPFLI_MAX_MATCH, dummysublen,
                            &dist, &leng);
     lengthscore = GetLengthScore(leng, dist);
 
@@ -594,7 +587,7 @@ void ZopfliLZ77Greedy(ZopfliBlockState* s, const unsigned char* in,
         dist = prev_match;
         lengthscore = prevlengthscore;
         /* Add to output. */
-        ZopfliVerifyLenDist(in, inend, i - 1, dist, leng);
+        ZopfliVerifyLenDist(in, mask, inend, i - 1, dist, leng);
         ZopfliStoreLitLenDist(leng, dist, i - 1, store);
         for (j = 2; j < leng; j++) {
           assert(i < inend);
@@ -615,7 +608,7 @@ void ZopfliLZ77Greedy(ZopfliBlockState* s, const unsigned char* in,
 
     /* Add to output. */
     if (lengthscore >= ZOPFLI_MIN_MATCH) {
-      ZopfliVerifyLenDist(in, inend, i, dist, leng);
+      ZopfliVerifyLenDist(in, mask, inend, i, dist, leng);
       ZopfliStoreLitLenDist(leng, dist, i, store);
     } else {
       leng = 1;
